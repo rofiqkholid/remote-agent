@@ -18,9 +18,6 @@ Route::prefix('agent')->group(function () {
     Route::get('/{id}/stream', [AgentController::class, 'stream']); // MJPEG Stream
     Route::post('/heartbeat', [AgentController::class, 'heartbeat']);
 
-    // Command route? The dashboard sends commands to the server, server broadcasts to agent channel?
-    // Or dashboard broadcasts directly to agent channel (whisper)?
-    // For security, server-side broadcast is better.
 });
 
 Route::post('/agent/command', function (Request $request) {
