@@ -331,23 +331,18 @@
             toggleInputControl(document.getElementById('input-control-toggle'));
 
             if (window.Echo) {
-                // FALLBACK TO POLLING because 'php artisan serve' is single-threaded and hangs on streams
+                // Production / Multi-threaded Server Mode (MJPEG Stream)
+                const channel = window.Echo.channel(`agent.${id}`);
+
+                // Set the stream URL immediately when modal opens
                 const img = document.getElementById('remote-screen-img');
-                const loading = document.getElementById('modal-loading-msg');
+                img.src = `/api/agent/${id}/stream`;
 
-                // Start polling every 500ms
-                if (window.remoteInterval) clearInterval(window.remoteInterval);
-
-                window.remoteInterval = setInterval(() => {
-                    const temp = new Image();
-                    const src = `/api/agent/${id}/image?t=${Date.now()}`;
-                    temp.src = src;
-                    temp.onload = () => {
-                        img.src = src;
-                        loading.style.display = 'none';
-                        img.style.display = 'block';
-                    };
-                }, 500);
+                // Show image when loaded (stream starts)
+                img.onload = () => {
+                    document.getElementById('modal-loading-msg').style.display = 'none';
+                    img.style.display = 'block';
+                };
             }
         }
 
