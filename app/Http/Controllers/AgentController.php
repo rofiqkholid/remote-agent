@@ -7,7 +7,8 @@ use App\Events\AgentRegistered;
 use App\Events\AgentScreenUpdated;
 use App\Events\AgentOffline;
 use App\Models\Agent;
-use Illuminate\Support\Facades\Cache; // Fix lint
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 
 class AgentController extends Controller
@@ -56,7 +57,7 @@ class AgentController extends Controller
         Agent::where('uuid', $data['id'])->update(['last_seen_at' => now()]);
 
         // Store image in Cache for 30 seconds
-        \Cache::put('agent_screen_' . $data['id'], $data['image'], 30);
+        Cache::put('agent_screen_' . $data['id'], $data['image'], 30);
 
         // Broadcast notification only (lightweight)
         broadcast(new AgentScreenUpdated($data['id'], 'AVAILABLE'));

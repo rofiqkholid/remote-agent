@@ -138,7 +138,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             console.log('UI Loaded');
             fetchAgents();
-            checkEcho();
+            setupPolling();
             setupInputListeners();
         });
 
@@ -232,22 +232,17 @@
                 .catch(error => console.error('Error fetching agents:', error));
         }
 
-        function checkEcho() {
-            if (window.Echo) {
-                document.getElementById('connection-status').innerText = 'Terhubung';
-                document.getElementById('connection-status').className = 'text-green-600 font-semibold';
-                document.getElementById('connection-status').innerText += ' (Ready)'; // Visual indicator
+        function setupPolling() {
+            document.getElementById('connection-status').innerText = 'Mode: Polling (3s)';
+            document.getElementById('connection-status').className = 'text-blue-600 font-semibold';
 
-                window.Echo.channel('agents')
-                    .listen('AgentRegistered', (e) => {
-                        addOrUpdateAgent(e.agentId, e.info);
-                    })
-                    .listen('AgentOffline', (e) => {
-                        removeAgent(e.agentId);
-                    });
-            } else {
-                setTimeout(checkEcho, 500);
-            }
+            // Initial fetch
+            fetchAgents();
+
+            // Poll every 3 seconds
+            setInterval(() => {
+                fetchAgents();
+            }, 3000);
         }
 
         function addOrUpdateAgent(id, info) {
