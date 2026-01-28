@@ -84,37 +84,54 @@ class AgentController extends Controller
         // Disable timeout for streaming
         set_time_limit(0);
 
+        // Close session to prevent locking other requests
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+
         return response()->stream(function () use ($id) {
             $lastHash = null;
-            while (true) {
-                $image = \Cache::get('agent_screen_' . $id);
 
-                if (connection_aborted()) {
-                    break;
-                }
+            // Clean output buffer to ensure immediately flushing
+            while (ob_get_level() > 0) {
+                ob_end_flush();
+            }
+            ob_implicit_flush(1);
 
-                if ($image) {
-                    $hash = md5($image);
-                    if ($hash !== $lastHash) {
-                        $lastHash = $hash;
-                        $data = base64_decode($image);
-
-                        echo "--frame\r\n";
-                        echo "Content-Type: image/jpeg\r\n\r\n";
-                        echo $data;
-                        echo "\r\n";
-
-                        if (ob_get_level() > 0) ob_flush();
-                        flush();
+            try {
+                while (true) {
+                    if (connection_aborted()) {
+                        break;
                     }
-                }
 
-                usleep(50000); // 20 FPS check
+                    $image = \Cache::get('agent_screen_' . $id);
+
+                    if ($image) {
+                        $hash = md5($image);
+                        if ($hash !== $lastHash) {
+                            $lastHash = $hash;
+                            $data = base64_decode($image);
+
+                            echo "--frame\r\n";
+                            echo "Content-Type: image/jpeg\r\n";
+                            echo "Content-Length: " . strlen($data) . "\r\n\r\n";
+                            echo $data;
+                            echo "\r\n";
+
+                            flush(); // Force send to client
+                        }
+                    }
+
+                    usleep(100000); // 10 FPS is enough and safer for shared hosting
+                }
+            } catch (\Exception $e) {
+                // Silently exit
             }
         }, 200, [
             'Content-Type' => 'multipart/x-mixed-replace; boundary=frame',
-            'Cache-Control' => 'no-cache',
-            'Connection' => 'keep-alive',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
             'X-Accel-Buffering' => 'no'
         ]);
     }
