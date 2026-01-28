@@ -359,9 +359,6 @@
             if (activeAgentId && window.Echo) {
                 window.Echo.leave(`agent.${activeAgentId}`);
             }
-            if (window.remoteInterval) {
-                clearInterval(window.remoteInterval);
-            }
             activeAgentId = null;
         }
     </script>
