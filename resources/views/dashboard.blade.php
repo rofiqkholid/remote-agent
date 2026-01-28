@@ -325,20 +325,15 @@
             document.getElementById('input-control-toggle').checked = false;
             toggleInputControl(document.getElementById('input-control-toggle'));
 
-            if (window.Echo) {
-                // Production / Multi-threaded Server Mode (MJPEG Stream)
-                const channel = window.Echo.channel(`agent.${id}`);
+            // MJPEG Stream (works without WebSocket)
+            const img = document.getElementById('remote-screen-img');
+            img.src = `/api/agent/${id}/stream`;
 
-                // Set the stream URL immediately when modal opens
-                const img = document.getElementById('remote-screen-img');
-                img.src = `/api/agent/${id}/stream`;
-
-                // Show image when loaded (stream starts)
-                img.onload = () => {
-                    document.getElementById('modal-loading-msg').style.display = 'none';
-                    img.style.display = 'block';
-                };
-            }
+            // Show image when loaded (stream starts)
+            img.onload = () => {
+                document.getElementById('modal-loading-msg').style.display = 'none';
+                img.style.display = 'block';
+            };
         }
 
         function closeRemoteModal() {
@@ -346,9 +341,9 @@
             if (document.fullscreenElement) {
                 document.exitFullscreen();
             }
-            if (activeAgentId && window.Echo) {
-                window.Echo.leave(`agent.${activeAgentId}`);
-            }
+            // Stop the stream by clearing the src
+            const img = document.getElementById('remote-screen-img');
+            img.src = '';
             activeAgentId = null;
         }
     </script>
