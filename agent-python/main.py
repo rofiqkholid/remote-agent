@@ -8,15 +8,17 @@ import base64
 import logging
 import threading
 import requests
-import pyautogui
 import mss
-import pysher
 import os
 import winreg
+from pystray import Icon, Menu, MenuItem
+from PIL import Image, ImageDraw
 
 # Determine App Data path for logs
 app_data = os.getenv('APPDATA')
 log_path = os.path.join(app_data, 'AgentMonitoring', 'agent.log')
+config_file_path = os.path.join(app_data, 'AgentMonitoring', 'config.json')
+
 if not os.path.exists(os.path.dirname(log_path)):
     os.makedirs(os.path.dirname(log_path))
 
@@ -33,42 +35,59 @@ logger = logging.getLogger()
 
 # Default Configuration
 CONFIG = {
-    'REVERB_APP_KEY': 'a7qy9jbsjkitzx8sgtie',
-    'REVERB_HOST': '127.0.0.1',
-    'REVERB_PORT': 8080,
-    'API_URL': 'http://127.0.0.1:8000/api',
     'AGENT_ID': str(uuid.uuid4()),
     'SCREENSHOT_INTERVAL': 3.0,
-    'REVERB_SCHEME': 'http'
+    'API_URL': None,  # Will be fetched from user
 }
 
-# Load Config from file if exists (next to executable)
-if getattr(sys, 'frozen', False):
-    exe_dir = os.path.dirname(sys.executable)
-else:
-    exe_dir = os.path.dirname(os.path.abspath(__file__))
-
-config_path = os.path.join(exe_dir, 'config.json')
-
-if not os.path.exists(config_path):
-    # Try parent directory (useful for dev: agent-python/../config.json)
-    parent_config = os.path.join(os.path.dirname(exe_dir), 'config.json')
-    if os.path.exists(parent_config):
-        config_path = parent_config
-
-if os.path.exists(config_path):
+def load_or_create_config():
+    """Load config from AppData, or prompt user for server URL"""
+    global CONFIG
+    
+    if os.path.exists(config_file_path):
+        try:
+            with open(config_file_path, 'r') as f:
+                saved_config = json.load(f)
+                CONFIG.update(saved_config)
+                logger.info(f"Loaded config from {config_file_path}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to load config: {e}")
+    
+    # First time run - ask for server URL
+    logger.info("First time setup...")
     try:
-        with open(config_path, 'r') as f:
-            user_config = json.load(f)
-            CONFIG.update(user_config)
-            logger.info(f"Loaded config from {config_path}")
+        import tkinter as tk
+        from tkinter import simpledialog
+        
+        root = tk.Tk()
+        root.withdraw()
+        
+        server_url = simpledialog.askstring(
+            "Agent Setup",
+            "Enter your monitoring server URL:\n(e.g., https://remote.dyanaf.com)",
+            initialvalue="https://"
+        )
+        
+        root.destroy()
+        
+        if server_url:
+            server_url = server_url.rstrip('/')
+            CONFIG['API_URL'] = f"{server_url}/api"
+            
+            # Save config
+            with open(config_file_path, 'w') as f:
+                json.dump(CONFIG, f, indent=4)
+            
+            logger.info(f"Config saved to {config_file_path}")
+            return True
+        else:
+            logger.error("No server URL provided. Exiting.")
+            return False
+            
     except Exception as e:
-        logger.error(f"Failed to load config: {e}")
-else:
-    logger.warning(f"No config.json found at {config_path} (or parent), using defaults.")
-
-logger.info(f"Using Server: {CONFIG['REVERB_HOST']}")
-
+        logger.error(f"Setup error: {e}")
+        return False
 
 def install_startup():
     """Adds the executable to the Windows Registry for auto-start"""
@@ -109,8 +128,8 @@ def register_agent():
         if not payload['username']:
              payload['username'] = os.environ.get('USERNAME', 'User')
 
-        response = requests.post(f"{CONFIG['API_URL']}/agent/register", json=payload)
-        logger.info(f"Register Response: {response.status_code} - {response.text}")
+        response = requests.post(f"{CONFIG['API_URL']}/agent/register", json=payload, timeout=10)
+        logger.info(f"Register Response: {response.status_code}")
         if response.status_code == 200:
             logger.info("Agent registered successfully")
             return True
@@ -121,6 +140,15 @@ def register_agent():
         logger.error(f"Registration error: {e}")
         return False
 
+def send_heartbeat():
+    """Send periodic heartbeat"""
+    while True:
+        try:
+            requests.post(f"{CONFIG['API_URL']}/agent/heartbeat", json={'id': CONFIG['AGENT_ID']}, timeout=5)
+        except Exception as e:
+            logger.error(f"Heartbeat error: {e}")
+        time.sleep(30)  # Every 30 seconds
+
 def stream_screen():
     with mss.mss() as sct:
         monitor = sct.monitors[1] 
@@ -128,7 +156,6 @@ def stream_screen():
             try:
                 sct_img = sct.grab(monitor)
                 import io
-                from PIL import Image
                 img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
                 img.thumbnail((800, 600))
                 
@@ -139,102 +166,58 @@ def stream_screen():
                 requests.post(f"{CONFIG['API_URL']}/agent/screen", json={
                     'id': CONFIG['AGENT_ID'],
                     'image': img_str
-                })
-                # Logger verbose maybe? limit it
-                # logger.info("Sent screen frame")
+                }, timeout=5)
                 
             except Exception as e:
                 logger.error(f"Stream Error: {e}")
-                time.sleep(5) # Wait a bit on error
+                time.sleep(5)
             
             time.sleep(CONFIG['SCREENSHOT_INTERVAL'])
 
-def handle_command(data):
-    try:
-        if isinstance(data, str):
-            cmd = json.loads(data)
-        else:
-            cmd = data
-        cmd_data = cmd.get('command', {}) if 'command' in cmd else cmd
-        
-        if not cmd_data: return
+def create_icon_image():
+    """Create a simple icon for system tray"""
+    width = 64
+    height = 64
+    image = Image.new('RGB', (width, height), color='blue')
+    dc = ImageDraw.Draw(image)
+    dc.rectangle([(16, 16), (48, 48)], fill='white')
+    return image
 
-        # Get Screen Size for coordinate mapping
-        screen_width, screen_height = pyautogui.size()
-
-        if cmd_data.get('type') == 'move':
-            # Relative coordinates (0-1)
-            x_ratio = cmd_data.get('x', 0)
-            y_ratio = cmd_data.get('y', 0)
-            target_x = int(x_ratio * screen_width)
-            target_y = int(y_ratio * screen_height)
-            pyautogui.moveTo(target_x, target_y)
-
-        elif cmd_data.get('type') == 'click':
-            x_ratio = cmd_data.get('x')
-            y_ratio = cmd_data.get('y')
-            if x_ratio is not None and y_ratio is not None:
-                target_x = int(x_ratio * screen_width)
-                target_y = int(y_ratio * screen_height)
-                pyautogui.click(target_x, target_y)
-            else:
-                 pyautogui.click()
-
-        elif cmd_data.get('type') == 'type':
-             text = cmd_data.get('text')
-             # Map some special keys if needed, or rely on pyautogui support
-             if text == 'Enter': pyautogui.press('enter')
-             elif text == 'Backspace': pyautogui.press('backspace')
-             elif text:
-                 if len(text) == 1:
-                     pyautogui.write(text)
-                 else:
-                     # Handle special keys sent as 'ArrowUp' etc by browser
-                     key_map = {
-                         'ArrowUp': 'up', 'ArrowDown': 'down', 'ArrowLeft': 'left', 'ArrowRight': 'right',
-                         'Escape': 'esc', 'Tab': 'tab', 'Delete': 'delete'
-                     }
-                     pyautogui.press(key_map.get(text, text.lower()))
-
-    except Exception as e:
-        logger.error(f"Command error: {e}")
+def on_quit(icon, item):
+    """Quit the application"""
+    logger.info("Agent stopping...")
+    icon.stop()
+    os._exit(0)
 
 def main():
+    # Load config
+    if not load_or_create_config():
+        sys.exit(1)
+    
     # Auto-register startup on run
     install_startup()
     
     logger.info(f"Starting Agent {CONFIG['AGENT_ID']}")
+    logger.info(f"API URL: {CONFIG['API_URL']}")
     
     if not register_agent():
-        pass # Continue anyway to try later?
-
-    secure_connection = (CONFIG.get('REVERB_SCHEME', 'http') == 'https')
-
-    pusher = pysher.Pusher(
-        key=CONFIG['REVERB_APP_KEY'],
-        cluster='mt1',
-        custom_host=CONFIG['REVERB_HOST'],
-        secure=secure_connection,
-        port=CONFIG['REVERB_PORT']
-    )
+        logger.warning("Agent registration failed, will retry...")
     
-    def connect_handler(data):
-        logger.info("Connected to Reverb")
-        channel = pusher.subscribe(f"agent.{CONFIG['AGENT_ID']}")
-        channel.bind('AgentCommandSent', handle_command)
-        
-    pusher.connection.bind('pusher:connection_established', connect_handler)
-    pusher.connect()
+    # Start screenshot thread
+    t_screen = threading.Thread(target=stream_screen, daemon=True)
+    t_screen.start()
     
-    t = threading.Thread(target=stream_screen)
-    t.daemon = True
-    t.start()
+    # Start heartbeat thread
+    t_heartbeat = threading.Thread(target=send_heartbeat, daemon=True)
+    t_heartbeat.start()
     
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        pusher.disconnect()
+    # System tray icon
+    icon_image = create_icon_image()
+    menu = Menu(MenuItem('Quit', on_quit))
+    icon = Icon("AgentMonitoring", icon_image, "Agent Monitoring", menu)
+    
+    logger.info("Agent running in system tray...")
+    icon.run()
 
 if __name__ == "__main__":
     main()

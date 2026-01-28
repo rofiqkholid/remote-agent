@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" 
+           Name="Agent Monitoring" 
+           Language="1033" 
+           Version="1.0.0.0" 
+           Manufacturer="Your Company" 
+           UpgradeCode="12345678-1234-1234-1234-123456789012">
+    
+    <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+    
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Agent Monitoring is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="ProductFeature" Title="Agent Monitoring" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+  </Product>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="AgentMonitoring" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="Agent Monitoring"/>
+      </Directory>
+      <Directory Id="StartupFolder" />
+    </Directory>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="AgentExecutable" Guid="87654321-4321-4321-4321-210987654321">
+        <File Id="AgentMonitoringEXE" Source="dist\AgentMonitoring.exe" KeyPath="yes" />
+        
+        <!-- Auto-start on Windows startup -->
+        <RegistryValue Root="HKCU" 
+                       Key="Software\Microsoft\Windows\CurrentVersion\Run" 
+                       Name="AgentMonitoring" 
+                       Value="[INSTALLFOLDER]AgentMonitoring.exe" 
+                       Type="string" />
+      </Component>
+      
+      <!-- Start Menu Shortcut -->
+      <Component Id="StartMenuShortcut" Guid="11111111-2222-3333-4444-555555555555" Directory="ApplicationProgramsFolder">
+        <Shortcut Id="ApplicationStartMenuShortcut"
+                  Name="Agent Monitoring"
+                  Description="Remote Monitoring Agent"
+                  Target="[INSTALLFOLDER]AgentMonitoring.exe"
+                  WorkingDirectory="INSTALLFOLDER"/>
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall"/>
+        <RegistryValue Root="HKCU" Key="Software\AgentMonitoring" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

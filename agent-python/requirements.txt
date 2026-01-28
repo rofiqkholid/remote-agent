@@ -1,8 +1,5 @@
 requests
-python-socketio[client]
-websocket-client
 mss
-pyautogui
+Pillow
+pystray
 pyinstaller
-uuid
-pysher
