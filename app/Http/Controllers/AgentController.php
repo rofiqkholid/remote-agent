@@ -82,8 +82,9 @@ class AgentController extends Controller
 
     public function stream($id)
     {
-        // Disable timeout for streaming
-        set_time_limit(0);
+        // Disable timeout for streaming (may not work on shared hosting)
+        @set_time_limit(0);
+        @ini_set('max_execution_time', '0');
 
         // Close session to prevent locking other requests
         if (session_status() === PHP_SESSION_ACTIVE) {
@@ -92,6 +93,8 @@ class AgentController extends Controller
 
         return response()->stream(function () use ($id) {
             $lastHash = null;
+            $startTime = time();
+            $maxDuration = 120; // 2 minutes max to avoid hosting timeout
 
             // Clean output buffer to ensure immediately flushing
             while (ob_get_level() > 0) {
@@ -100,12 +103,23 @@ class AgentController extends Controller
             ob_implicit_flush(1);
 
             try {
+                // Send initial boundary immediately to establish connection
+                echo "--frame\r\n";
+                echo "Content-Type: image/jpeg\r\n\r\n";
+
+                // Send a minimal placeholder if no data
+                $placeholder = base64_decode('/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA2AA//2Q==');
+                echo $placeholder;
+                echo "\r\n";
+                flush();
+
                 while (true) {
-                    if (connection_aborted()) {
+                    // Check connection and timeout
+                    if (connection_aborted() || (time() - $startTime) > $maxDuration) {
                         break;
                     }
 
-                    $image = \Cache::get('agent_screen_' . $id);
+                    $image = Cache::get('agent_screen_' . $id);
 
                     if ($image) {
                         $hash = md5($image);
@@ -123,10 +137,11 @@ class AgentController extends Controller
                         }
                     }
 
-                    usleep(100000); // 10 FPS is enough and safer for shared hosting
+                    usleep(100000); // 10 FPS
                 }
             } catch (\Exception $e) {
-                // Silently exit
+                // Log error for debugging
+                \Log::error('Stream error: ' . $e->getMessage());
             }
         }, 200, [
             'Content-Type' => 'multipart/x-mixed-replace; boundary=frame',
