@@ -1,0 +1,7 @@
+{
+    "REVERB_HOST": "remote.dyanaf.com",
+    "REVERB_PORT": 443,
+    "REVERB_SCHEME": "https",
+    "API_URL": "https://remote.dyanaf.com/api",
+    "SCREENSHOT_INTERVAL": 0.5
+}

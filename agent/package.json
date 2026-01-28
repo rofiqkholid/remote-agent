@@ -1,0 +1,19 @@
+{
+    "name": "agent-monitoring",
+    "version": "1.0.0",
+    "description": "Remote monitoring agent",
+    "main": "index.js",
+    "bin": "index.js",
+    "scripts": {
+        "start": "node index.js"
+    },
+    "dependencies": {
+        "axios": "^1.6.0",
+        "dotenv": "^16.3.1",
+        "laravel-echo": "^1.15.3",
+        "pusher-js": "^8.3.0",
+        "screenshot-desktop": "^1.15.0",
+        "uuid": "^13.0.0",
+        "ws": "^8.16.0"
+    }
+}

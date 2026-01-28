@@ -1,0 +1,8 @@
+requests
+python-socketio[client]
+websocket-client
+mss
+pyautogui
+pyinstaller
+uuid
+pysher
