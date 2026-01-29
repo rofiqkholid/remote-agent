@@ -175,7 +175,7 @@ def capture_loop():
                 # fast capture
                 sct_img = sct.grab(monitor)
                 img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                img.thumbnail((800, 600))
+                img.thumbnail((1280, 720))  # HD Resolution
                 
                 # DEBUG: Draw Timestamp on image
                 draw = ImageDraw.Draw(img)
@@ -184,7 +184,7 @@ def capture_loop():
                 draw.text((10, 10), f"DEBUG: {timestamp_str}", fill="red")
                 
                 buffer = io.BytesIO()
-                img.save(buffer, format="JPEG", quality=30)
+                img.save(buffer, format="JPEG", quality=50)  # Higher Quality
                 img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
                 
                 with FRAME_MANAGER.lock:

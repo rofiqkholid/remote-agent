@@ -118,10 +118,10 @@
                     </div>
                 </div>
 
-                <!-- Screen Area -->
-                <div class="flex-grow bg-gray-100 relative flex items-center justify-center overflow-auto focus:outline-none" id="remote-screen-container" tabindex="0">
+                <!-- Screen Area (Fullscreen) -->
+                <div class="flex-grow bg-gray-800 relative flex items-center justify-center overflow-hidden focus:outline-none" id="remote-screen-container" tabindex="0">
                     <img id="remote-screen-img" src="" alt="Remote Screen"
-                        class="max-h-[85vh] object-contain shadow-md ring-1 ring-gray-900/5 select-none"
+                        class="w-full h-full object-contain select-none"
                         draggable="false">
                     <div id="modal-loading-msg" class="absolute text-gray-400 font-medium animate-pulse">Waiting for stream...</div>
                 </div>
