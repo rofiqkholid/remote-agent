@@ -182,7 +182,8 @@ def poll_commands():
     
     while True:
         try:
-            response = requests.get(f"{CONFIG['API_URL']}/{CONFIG['AGENT_ID']}/commands", timeout=10)
+            # Fix: Add /agent prefix to match route group
+            response = requests.get(f"{CONFIG['API_URL']}/agent/{CONFIG['AGENT_ID']}/commands", timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 commands = data.get('commands', [])
