@@ -57,16 +57,35 @@ class AgentController extends Controller
         Agent::where('uuid', $data['id'])->update(['last_seen_at' => now()]);
 
         // Store image directly in storage for performance (bypass Cache overhead)
-        $path = storage_path('app/agent_frames/' . $data['id'] . '.jpg');
+        // DOUBLE BUFFERING Implementation to fix Windows File Locking
+        $basePath = storage_path('app/agent_frames/' . $data['id']);
+        $statePath = $basePath . '.state';
+
         // Ensure directory exists
-        if (!file_exists(dirname($path))) {
-            mkdir(dirname($path), 0755, true);
+        if (!file_exists(dirname($basePath))) {
+            mkdir(dirname($basePath), 0755, true);
         }
 
-        // Decode and save raw bytes to avoid decoding on read
-        // The agent sends base64, we decode it here once.
+        // 1. Determine next buffer (A or B)
+        $nextBuffer = 'A';
+        if (file_exists($statePath)) {
+            $currentState = @file_get_contents($statePath);
+            if ($currentState) {
+                // Format: BUFFER|TIMESTAMP (e.g. A|12345678)
+                $parts = explode('|', $currentState);
+                if (isset($parts[0]) && $parts[0] === 'A') {
+                    $nextBuffer = 'B';
+                }
+            }
+        }
+
+        // 2. Write to NEXT buffer (The one NOT being read)
+        $targetFile = $basePath . '_' . $nextBuffer . '.jpg';
         $imageBytes = base64_decode($data['image']);
-        file_put_contents($path, $imageBytes);
+        file_put_contents($targetFile, $imageBytes);
+
+        // 3. Atomically update state to point to new buffer
+        file_put_contents($statePath, $nextBuffer . '|' . microtime(true));
 
         // Broadcast notification only (lightweight)
         broadcast(new AgentScreenUpdated($data['id'], 'AVAILABLE'));
