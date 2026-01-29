@@ -358,14 +358,30 @@
             document.getElementById('input-control-toggle').checked = false;
             toggleInputControl(document.getElementById('input-control-toggle'));
 
-            // MJPEG Stream (works without WebSocket)
+            // Start MJPEG Stream with auto-reconnect
+            startStream(id);
+        }
+
+        let streamReconnectTimer = null;
+
+        function startStream(id) {
             const img = document.getElementById('remote-screen-img');
-            img.src = `/api/agent/${id}/stream`;
+            // Add timestamp to prevent caching
+            img.src = `/api/agent/${id}/stream?t=${Date.now()}`;
 
             // Show image when loaded (stream starts)
             img.onload = () => {
                 document.getElementById('modal-loading-msg').style.display = 'none';
                 img.style.display = 'block';
+            };
+
+            // Auto-reconnect on error (PHP timeout)
+            img.onerror = () => {
+                if (activeAgentId === id) {
+                    console.log('Stream disconnected, reconnecting in 500ms...');
+                    clearTimeout(streamReconnectTimer);
+                    streamReconnectTimer = setTimeout(() => startStream(id), 500);
+                }
             };
         }
 
