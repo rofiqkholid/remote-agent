@@ -175,7 +175,7 @@ def capture_loop():
                 # fast capture
                 sct_img = sct.grab(monitor)
                 img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                img.thumbnail((1280, 720))  # HD Resolution
+                img.thumbnail((1024, 576))  # Balanced HD Resolution
                 
                 # DEBUG: Draw Timestamp on image
                 draw = ImageDraw.Draw(img)
@@ -190,9 +190,9 @@ def capture_loop():
                 with FRAME_MANAGER.lock:
                     FRAME_MANAGER.latest_frame = (img_str, time.time())
                 
-                # Target 30 FPS for capture (approx 0.033s per frame)
+                # Target 15 FPS for capture (approx 0.066s per frame) - Balanced for upload
                 elapsed = time.time() - start_time
-                sleep_time = max(0, 0.033 - elapsed)
+                sleep_time = max(0, 0.066 - elapsed)
                 time.sleep(sleep_time)
                 
             except Exception as e:
