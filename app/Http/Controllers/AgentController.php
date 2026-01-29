@@ -115,9 +115,12 @@ class AgentController extends Controller
 
     public function stream($id)
     {
-        // Disable timeout for streaming (may not work on shared hosting)
+        // Disable ALL limits for streaming
         @set_time_limit(0);
         @ini_set('max_execution_time', '0');
+        @ini_set('output_buffering', 'off');
+        @ini_set('zlib.output_compression', 'off');
+        ignore_user_abort(true);
 
         // Close session to prevent locking other requests
         if (session_status() === PHP_SESSION_ACTIVE) {
@@ -127,79 +130,58 @@ class AgentController extends Controller
         return response()->stream(function () use ($id) {
             $lastHash = null;
             $startTime = time();
-            $maxDuration = 120; // 2 minutes max to avoid hosting timeout
+            $maxDuration = 300; // 5 minutes max
 
-            // Clean output buffer to ensure immediately flushing
+            // Disable ALL output buffering
+            @apache_setenv('no-gzip', '1');
             while (ob_get_level() > 0) {
-                ob_end_flush();
+                ob_end_clean();
             }
-            ob_implicit_flush(1);
+            ob_implicit_flush(true);
 
-            try {
-                // Send initial boundary immediately to establish connection
-                echo "--frame\r\n";
-                echo "Content-Type: image/jpeg\r\n\r\n";
+            $basePath = storage_path('app/agent_frames/' . $id);
+            $statePath = $basePath . '.state';
 
-                // Send a minimal placeholder if no data
-                $placeholder = base64_decode('/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA2AA//2Q==');
-                echo $placeholder;
-                echo "\r\n";
-                flush();
+            // CRITICAL: Main streaming loop - NO DELAYS
+            while (!connection_aborted() && (time() - $startTime) < $maxDuration) {
 
-                $basePath = storage_path('app/agent_frames/' . $id);
-                $statePath = $basePath . '.state';
+                if (file_exists($statePath)) {
+                    clearstatcache(true, $statePath);
+                    $currentState = @file_get_contents($statePath);
 
-                // CRITICAL: Main streaming loop
-                while (true) {
-                    // Check connection and timeout
-                    if (connection_aborted() || (time() - $startTime) > $maxDuration) {
-                        break;
-                    }
+                    if ($currentState && $currentState !== $lastHash) {
+                        $lastHash = $currentState;
 
-                    if (file_exists($statePath)) {
-                        // Check state file
-                        clearstatcache(true, $statePath);
-                        $currentState = file_get_contents($statePath); // e.g., "A|1234567"
+                        $parts = explode('|', $currentState);
+                        if (count($parts) >= 2) {
+                            $activeBuffer = $parts[0];
+                            $imagePath = $basePath . '_' . $activeBuffer . '.jpg';
 
-                        if ($currentState && $currentState !== $lastHash) { // State changed = New Frame
-                            $lastHash = $currentState;
-
-                            $parts = explode('|', $currentState);
-                            if (count($parts) >= 2) {
-                                $activeBuffer = $parts[0];
-                                $imagePath = $basePath . '_' . $activeBuffer . '.jpg';
-
-                                if (file_exists($imagePath)) {
-                                    $data = file_get_contents($imagePath);
-
+                            if (file_exists($imagePath)) {
+                                $data = @file_get_contents($imagePath);
+                                if ($data) {
                                     echo "--frame\r\n";
                                     echo "Content-Type: image/jpeg\r\n";
                                     echo "Content-Length: " . strlen($data) . "\r\n\r\n";
                                     echo $data;
                                     echo "\r\n";
-
-                                    // Aggressive flushing
-                                    while (ob_get_level() > 0) {
-                                        ob_end_flush();
-                                    }
                                     flush();
                                 }
                             }
                         }
                     }
+                }
 
-                    usleep(10000); // 10ms check
-                } // End of while(true)
-            } catch (\Exception $e) {
-                // Log error for debugging
-                \Log::error('Stream error: ' . $e->getMessage());
+                // Minimal delay - just enough to not spin CPU at 100%
+                usleep(1000); // 1ms
             }
         }, 200, [
             'Content-Type' => 'multipart/x-mixed-replace; boundary=frame',
-            'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate, max-age=0',
             'Pragma' => 'no-cache',
             'Expires' => '0',
-            'X-Accel-Buffering' => 'no'
+            'X-Accel-Buffering' => 'no',
+            'Connection' => 'keep-alive'
         ]);
     }
 
