@@ -265,9 +265,9 @@ def main():
     t_heartbeat = threading.Thread(target=send_heartbeat, daemon=True)
     t_heartbeat.start()
 
-    # Start command polling thread
-    t_command = threading.Thread(target=poll_commands, daemon=True)
-    t_command.start()
+    # Start WebSocket client thread (Reverb/Pusher)
+    t_ws = threading.Thread(target=start_websocket_client, daemon=True)
+    t_ws.start()
     
     # System tray icon
     icon_image = create_icon_image()

@@ -4,3 +4,5 @@ Pillow
 pystray
 pyinstaller
 pyautogui
+websocket-client
+simplejson

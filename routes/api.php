@@ -17,7 +17,6 @@ Route::prefix('agent')->group(function () {
     Route::get('/{id}/image', [AgentController::class, 'getScreenImage']);
     Route::get('/{id}/stream', [AgentController::class, 'stream']); // MJPEG Stream
     Route::post('/heartbeat', [AgentController::class, 'heartbeat']);
-    Route::get('/{id}/commands', [AgentController::class, 'getCommands']); // Poll for commands
 });
 
 Route::post('/agent/command', [AgentController::class, 'sendCommand']);

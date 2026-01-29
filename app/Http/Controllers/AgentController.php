@@ -168,29 +168,9 @@ class AgentController extends Controller
             'command' => 'required|array'
         ]);
 
-        $key = 'agent_commands_' . $data['agentId'];
-        $commands = Cache::get($key, []);
-        $commands[] = $data['command'];
-        Cache::put($key, $commands, 5); // Keep for 5 seconds
+        // Broadcast directly to Reverb/Pusher
+        broadcast(new \App\Events\AgentCommandSent($data['agentId'], $data['command']));
 
-        return response()->json(['status' => 'queued']);
-    }
-
-    public function getCommands($id)
-    {
-        // Long polling for commands (up to 5 seconds)
-        $startTime = time();
-        $key = 'agent_commands_' . $id;
-
-        while (time() - $startTime < 5) {
-            $commands = Cache::get($key);
-            if (!empty($commands)) {
-                Cache::forget($key); // Consume commands
-                return response()->json(['commands' => $commands]);
-            }
-            usleep(100000); // 100ms
-        }
-
-        return response()->json(['commands' => []]);
+        return response()->json(['status' => 'sent']);
     }
 }
