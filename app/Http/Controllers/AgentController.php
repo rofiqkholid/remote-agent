@@ -137,7 +137,7 @@ class AgentController extends Controller
                         }
                     }
 
-                    usleep(100000); // 10 FPS
+                    usleep(25000); // Check cache every 25ms (40x check rate) for low latency
                 }
             } catch (\Exception $e) {
                 // Log error for debugging

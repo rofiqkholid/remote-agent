@@ -36,7 +36,7 @@ logger = logging.getLogger()
 # Default Configuration
 CONFIG = {
     'AGENT_ID': str(uuid.uuid4()),
-    'SCREENSHOT_INTERVAL': 3.0,
+    'SCREENSHOT_INTERVAL': 0.1,
     'API_URL': None,  # Will be fetched from user
 }
 
