@@ -176,7 +176,7 @@ def stream_screen():
             time.sleep(CONFIG['SCREENSHOT_INTERVAL'])
 
 def start_websocket_client():
-    """Connect to Reverb/Pusher WebSocket"""
+    """Connect to Reverb/Pusher WebSocket with Polling Fallback"""
     import websocket
     import simplejson as json
     import threading
@@ -186,6 +186,7 @@ def start_websocket_client():
         response = requests.get(f"{CONFIG['API_URL']}/agent/config", timeout=10)
         if response.status_code != 200:
             logger.error(f"Failed to fetch config: {response.status_code}")
+            start_fallback_polling()
             return
         
         ws_config = response.json()
@@ -194,14 +195,23 @@ def start_websocket_client():
         PORT = ws_config.get('reverb_port')
         SCHEME = ws_config.get('reverb_scheme')
         
+        # Override if localhost (fix for misconfigured server environment)
+        if HOST in ['localhost', '127.0.0.1', '0.0.0.0']:
+            logger.warning("Detected localhost config, overriding with production values...")
+            HOST = 'remote.dyanaf.com'
+            PORT = 443
+            SCHEME = 'https'
+            
         logger.info(f"Reverb Config: {HOST}:{PORT} (Key: {APP_KEY})")
         
         if not APP_KEY:
             logger.error("Reverb App Key missing!")
+            start_fallback_polling()
             return
 
     except Exception as e:
         logger.error(f"Error fetching WS config: {e}")
+        start_fallback_polling()
         return
 
     # 2. WebSocket Logic
@@ -220,7 +230,6 @@ def start_websocket_client():
                     pass
 
             if event == 'pusher:connection_established':
-                # Subscribe to private channel
                 ws.send(json.dumps({
                     'event': 'pusher:subscribe',
                     'data': {
@@ -230,7 +239,6 @@ def start_websocket_client():
                 logger.info(f"Subscribed to agent.{CONFIG['AGENT_ID']}")
                 
             elif event == 'App\\Events\\AgentCommandSent':
-                # Handle command
                 command = data.get('command')
                 if command:
                     process_command(command)
@@ -245,26 +253,51 @@ def start_websocket_client():
         logger.error(f"WS Error: {error}")
 
     def on_close(ws, close_status_code, close_msg):
-        logger.info("WS Closed. Reconnecting in 5s...")
-        time.sleep(5)
-        # Reconnect loop is handled by while True below? 
-        # Actually websocket.App run_forever blocks. We need a loop around it.
+        logger.info("WS Closed. Switching to polling fallback...")
+        # If WS fails, we fallback to polling in a separate thread/loop
+        # Avoid blocking this thread
+        threading.Thread(target=start_fallback_polling, daemon=True).start()
 
     def on_open(ws):
         logger.info("WS Connected")
 
     # 3. Connection Loop
+    try:
+        ws = websocket.WebSocketApp(ws_url,
+                                  on_open=on_open,
+                                  on_message=on_message,
+                                  on_error=on_error,
+                                  on_close=on_close)
+        ws.run_forever()
+    except Exception as e:
+        logger.error(f"WS Connection Failed: {e}")
+        start_fallback_polling()
+
+POLLING_ACTIVE = False
+def start_fallback_polling():
+    global POLLING_ACTIVE
+    if POLLING_ACTIVE:
+        return
+    POLLING_ACTIVE = True
+    
+    logger.info("Starting Polling Fallback (2s interval)...")
+    
     while True:
         try:
-            ws = websocket.WebSocketApp(ws_url,
-                                      on_open=on_open,
-                                      on_message=on_message,
-                                      on_error=on_error,
-                                      on_close=on_close)
-            ws.run_forever()
+            # Fix: Add /agent prefix to match route group
+            response = requests.get(f"{CONFIG['API_URL']}/agent/{CONFIG['AGENT_ID']}/commands", timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                commands = data.get('commands', [])
+                
+                for cmd in commands:
+                    process_command(cmd)
+                        
         except Exception as e:
-            logger.error(f"WS Connection Failed: {e}")
+            logger.error(f"Poll error: {e}")
             time.sleep(5)
+            
+        time.sleep(2.0) # 2s Poll Interval to reduce spam
 
 def process_command(cmd):
     """Execute command using pyautogui"""

@@ -168,18 +168,48 @@ class AgentController extends Controller
             'command' => 'required|array'
         ]);
 
-        // Broadcast directly to Reverb/Pusher
+        // 1. Broadcast to Reverb (Primary)
         broadcast(new \App\Events\AgentCommandSent($data['agentId'], $data['command']));
 
+        // 2. Queue for Polling (Fallback)
+        $key = 'agent_commands_' . $data['agentId'];
+        $commands = Cache::get($key, []);
+        $commands[] = $data['command'];
+        Cache::put($key, $commands, 10); // Keep for 10 seconds
+
         return response()->json(['status' => 'sent']);
+    }
+
+    public function getCommands($id)
+    {
+        $key = 'agent_commands_' . $id;
+        $commands = Cache::get($key);
+
+        if (!empty($commands)) {
+            Cache::forget($key);
+            return response()->json(['commands' => $commands]);
+        }
+
+        return response()->json(['commands' => []]);
     }
 
     public function getConfig()
     {
         // Expose public config for the agent
+        // Fallback to production URL if config is localhost (dev env issue)
+        $host = config('reverb.apps.apps.0.options.host');
+        if ($host === 'localhost' || $host === '0.0.0.0') {
+            return response()->json([
+                'reverb_app_key' => config('reverb.apps.apps.0.key'),
+                'reverb_host' => 'remote.dyanaf.com',
+                'reverb_port' => 443,
+                'reverb_scheme' => 'https',
+            ]);
+        }
+
         return response()->json([
             'reverb_app_key' => config('reverb.apps.apps.0.key'),
-            'reverb_host' => config('reverb.apps.apps.0.options.host'),
+            'reverb_host' => $host,
             'reverb_port' => config('reverb.apps.apps.0.options.port'),
             'reverb_scheme' => config('reverb.apps.apps.0.options.scheme'),
         ]);
