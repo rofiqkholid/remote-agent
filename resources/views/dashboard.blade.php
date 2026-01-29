@@ -275,6 +275,41 @@
                 // Mock Power data
                 const power = (Math.random() * 10 + 5).toFixed(2);
 
+                // Calculate Status
+                const lastSeenDate = new Date(agent.last_seen_at);
+                const now = new Date();
+                const diffSeconds = Math.floor((now - lastSeenDate) / 1000);
+                const isOnline = diffSeconds < 60; // 60 seconds threshold
+
+                let statusHtml = '';
+                if (isOnline) {
+                    statusHtml = `
+                        <span class="px-2.5 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full bg-green-100 text-green-800 border border-green-200">
+                            Online
+                        </span>`;
+                } else {
+                    statusHtml = `
+                        <span class="px-2.5 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full bg-gray-100 text-gray-800 border border-gray-200">
+                            Offline
+                        </span>`;
+                }
+
+                // Calculate Relative Time
+                let timeString = 'Just now';
+                if (diffSeconds >= 60) {
+                    const mins = Math.floor(diffSeconds / 60);
+                    if (mins < 60) {
+                        timeString = `${mins}m ago`;
+                    } else {
+                        const hours = Math.floor(mins / 60);
+                        if (hours < 24) {
+                            timeString = `${hours}h ago`;
+                        } else {
+                            timeString = lastSeenDate.toLocaleDateString();
+                        }
+                    }
+                }
+
                 tr.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${index++}</td>
                     <td class="px-6 py-4 whitespace-nowrap">
@@ -287,9 +322,7 @@
                         <div class="text-xs text-gray-500">Staff</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <span class="px-2.5 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full bg-green-100 text-green-800 border border-green-200">
-                            Online
-                        </span>
+                        ${statusHtml}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-amber-600 font-bold flex items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
@@ -299,7 +332,7 @@
                         ${agent.ip || '0.0.0.0'}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        Just now
+                        ${timeString}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <button onclick="openRemoteModal('${id}')" class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 p-2 rounded-full transition-colors mx-auto" title="Start Remote Session">
