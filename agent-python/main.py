@@ -178,7 +178,7 @@ def capture_loop():
                 img.thumbnail((800, 600))
                 
                 buffer = io.BytesIO()
-                img.save(buffer, format="JPEG", quality=40)
+                img.save(buffer, format="JPEG", quality=30)
                 img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
                 
                 with FRAME_MANAGER.lock:
