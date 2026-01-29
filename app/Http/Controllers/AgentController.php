@@ -76,12 +76,22 @@ class AgentController extends Controller
 
     public function getScreenImage($id)
     {
-        // Read from file storage
-        $path = storage_path('app/agent_frames/' . $id . '.jpg');
-        if (!file_exists($path)) {
+        // Read from file storage (Double Buffer Aware)
+        $basePath = storage_path('app/agent_frames/' . $id);
+        $statePath = $basePath . '.state';
+
+        $targetFile = $basePath . '_A.jpg'; // Default
+
+        if (file_exists($statePath)) {
+            $currentState = file_get_contents($statePath);
+            list($activeBuffer, $ts) = explode('|', $currentState);
+            $targetFile = $basePath . '_' . $activeBuffer . '.jpg';
+        }
+
+        if (!file_exists($targetFile)) {
             return response('No signal', 404);
         }
-        return response()->file($path, ['Content-Type' => 'image/jpeg']);
+        return response()->file($targetFile, ['Content-Type' => 'image/jpeg']);
     }
 
     public function stream($id)
