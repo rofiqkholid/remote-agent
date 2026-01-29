@@ -127,45 +127,42 @@ class AgentController extends Controller
                 echo "\r\n";
                 flush();
 
-                while (true) {
-                    // Check connection and timeout
-                    if (connection_aborted() || (time() - $startTime) > $maxDuration) {
-                        break;
-                    }
+                $basePath = storage_path('app/agent_frames/' . $id);
+                $statePath = $basePath . '.state';
 
-                    $path = storage_path('app/agent_frames/' . $id . '.jpg');
-                    clearstatcache(true, $path); // Clear cache to get fresh modification time
+                if (file_exists($statePath)) {
+                    // Check state file
+                    clearstatcache(true, $statePath);
+                    $currentState = file_get_contents($statePath); // e.g., "A|1234567"
 
-                    if (file_exists($path)) {
-                        // Check logic optimized for speed:
-                        // filemtime is unreliable (1s resolution). 
-                        // We must read file or hash it. Reading small files (JPEG ~20KB) is fast.
+                    if ($currentState && $currentState !== $lastHash) { // State changed = New Frame
+                        $lastHash = $currentState;
 
-                        // Clear stat cache to ensure we see new content if using size/mtime
-                        clearstatcache(true, $path);
+                        $parts = explode('|', $currentState);
+                        if (count($parts) >= 2) {
+                            $activeBuffer = $parts[0];
+                            $imagePath = $basePath . '_' . $activeBuffer . '.jpg';
 
-                        $currentContent = file_get_contents($path);
-                        $currentHash = md5($currentContent); // MD5 is fast enough for small frames
+                            if (file_exists($imagePath)) {
+                                $data = file_get_contents($imagePath);
 
-                        if ($currentHash !== $lastHash) {
-                            $lastHash = $currentHash;
+                                echo "--frame\r\n";
+                                echo "Content-Type: image/jpeg\r\n";
+                                echo "Content-Length: " . strlen($data) . "\r\n\r\n";
+                                echo $data;
+                                echo "\r\n";
 
-                            echo "--frame\r\n";
-                            echo "Content-Type: image/jpeg\r\n";
-                            echo "Content-Length: " . strlen($currentContent) . "\r\n\r\n";
-                            echo $currentContent;
-                            echo "\r\n";
-
-                            // Aggressive flushing
-                            while (ob_get_level() > 0) {
-                                ob_end_flush();
+                                // Aggressive flushing
+                                while (ob_get_level() > 0) {
+                                    ob_end_flush();
+                                }
+                                flush();
                             }
-                            flush();
                         }
                     }
-
-                    usleep(10000); // 10ms check (High Performance)
                 }
+
+                usleep(10000); // 10ms check
             } catch (\Exception $e) {
                 // Log error for debugging
                 \Log::error('Stream error: ' . $e->getMessage());
