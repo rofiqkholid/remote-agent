@@ -149,39 +149,47 @@ class AgentController extends Controller
                 $basePath = storage_path('app/agent_frames/' . $id);
                 $statePath = $basePath . '.state';
 
-                if (file_exists($statePath)) {
-                    // Check state file
-                    clearstatcache(true, $statePath);
-                    $currentState = file_get_contents($statePath); // e.g., "A|1234567"
+                // CRITICAL: Main streaming loop
+                while (true) {
+                    // Check connection and timeout
+                    if (connection_aborted() || (time() - $startTime) > $maxDuration) {
+                        break;
+                    }
 
-                    if ($currentState && $currentState !== $lastHash) { // State changed = New Frame
-                        $lastHash = $currentState;
+                    if (file_exists($statePath)) {
+                        // Check state file
+                        clearstatcache(true, $statePath);
+                        $currentState = file_get_contents($statePath); // e.g., "A|1234567"
 
-                        $parts = explode('|', $currentState);
-                        if (count($parts) >= 2) {
-                            $activeBuffer = $parts[0];
-                            $imagePath = $basePath . '_' . $activeBuffer . '.jpg';
+                        if ($currentState && $currentState !== $lastHash) { // State changed = New Frame
+                            $lastHash = $currentState;
 
-                            if (file_exists($imagePath)) {
-                                $data = file_get_contents($imagePath);
+                            $parts = explode('|', $currentState);
+                            if (count($parts) >= 2) {
+                                $activeBuffer = $parts[0];
+                                $imagePath = $basePath . '_' . $activeBuffer . '.jpg';
 
-                                echo "--frame\r\n";
-                                echo "Content-Type: image/jpeg\r\n";
-                                echo "Content-Length: " . strlen($data) . "\r\n\r\n";
-                                echo $data;
-                                echo "\r\n";
+                                if (file_exists($imagePath)) {
+                                    $data = file_get_contents($imagePath);
 
-                                // Aggressive flushing
-                                while (ob_get_level() > 0) {
-                                    ob_end_flush();
+                                    echo "--frame\r\n";
+                                    echo "Content-Type: image/jpeg\r\n";
+                                    echo "Content-Length: " . strlen($data) . "\r\n\r\n";
+                                    echo $data;
+                                    echo "\r\n";
+
+                                    // Aggressive flushing
+                                    while (ob_get_level() > 0) {
+                                        ob_end_flush();
+                                    }
+                                    flush();
                                 }
-                                flush();
                             }
                         }
                     }
-                }
 
-                usleep(10000); // 10ms check
+                    usleep(10000); // 10ms check
+                } // End of while(true)
             } catch (\Exception $e) {
                 // Log error for debugging
                 \Log::error('Stream error: ' . $e->getMessage());
