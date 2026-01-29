@@ -133,7 +133,9 @@ class AgentController extends Controller
             $maxDuration = 300; // 5 minutes max
 
             // Disable ALL output buffering
-            @apache_setenv('no-gzip', '1');
+            if (function_exists('apache_setenv')) {
+                @apache_setenv('no-gzip', '1');
+            }
             while (ob_get_level() > 0) {
                 ob_end_clean();
             }
