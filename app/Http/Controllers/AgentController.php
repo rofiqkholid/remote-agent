@@ -127,15 +127,23 @@ class AgentController extends Controller
                     clearstatcache(true, $path); // Clear cache to get fresh modification time
 
                     if (file_exists($path)) {
-                        $mtime = filemtime($path);
-                        if ($mtime !== $lastHash) { // Use mtime as hash
-                            $lastHash = $mtime;
-                            $data = file_get_contents($path);
+                        // Check logic optimized for speed:
+                        // filemtime is unreliable (1s resolution). 
+                        // We must read file or hash it. Reading small files (JPEG ~20KB) is fast.
+
+                        // Clear stat cache to ensure we see new content if using size/mtime
+                        clearstatcache(true, $path);
+
+                        $currentContent = file_get_contents($path);
+                        $currentHash = md5($currentContent); // MD5 is fast enough for small frames
+
+                        if ($currentHash !== $lastHash) {
+                            $lastHash = $currentHash;
 
                             echo "--frame\r\n";
                             echo "Content-Type: image/jpeg\r\n";
-                            echo "Content-Length: " . strlen($data) . "\r\n\r\n";
-                            echo $data;
+                            echo "Content-Length: " . strlen($currentContent) . "\r\n\r\n";
+                            echo $currentContent;
                             echo "\r\n";
 
                             // Aggressive flushing

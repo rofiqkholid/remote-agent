@@ -152,13 +152,28 @@ def send_heartbeat():
 # Global persistent session
 SESSION = requests.Session()
 
-def stream_screen():
+# Frame Manager for Async Upload
+class FrameManager:
+    def __init__(self):
+        self.latest_frame = None
+        self.lock = threading.Lock()
+        self.last_uploaded_ts = 0
+        self.running = True
+
+FRAME_MANAGER = FrameManager()
+
+def capture_loop():
+    """Captures screen at high FPS (30+)"""
     with mss.mss() as sct:
-        monitor = sct.monitors[1] 
-        while True:
+        monitor = sct.monitors[1]
+        import io
+        
+        while FRAME_MANAGER.running:
             try:
+                start_time = time.time()
+                
+                # fast capture
                 sct_img = sct.grab(monitor)
-                import io
                 img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
                 img.thumbnail((800, 600))
                 
@@ -166,18 +181,54 @@ def stream_screen():
                 img.save(buffer, format="JPEG", quality=40)
                 img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
                 
-                # Use persistent session for uploads (Keep-Alive)
-                SESSION.post(f"{CONFIG['API_URL']}/agent/screen", json={
-                    'id': CONFIG['AGENT_ID'],
-                    'image': img_str
-                }, timeout=5)
+                with FRAME_MANAGER.lock:
+                    FRAME_MANAGER.latest_frame = (img_str, time.time())
+                
+                # Target 30 FPS for capture (approx 0.033s per frame)
+                elapsed = time.time() - start_time
+                sleep_time = max(0, 0.033 - elapsed)
+                time.sleep(sleep_time)
                 
             except Exception as e:
-                logger.error(f"Stream Error: {e}")
-                time.sleep(5)
+                logger.error(f"Capture Error: {e}")
+                time.sleep(1)
+
+def upload_loop():
+    """Uploads the latest available frame as fast as possible"""
+    last_sent_ts = 0
+    
+    while FRAME_MANAGER.running:
+        try:
+            frame_data = None
+            frame_ts = 0
             
-            # Maintain target FPS but allow max throughput
-            time.sleep(CONFIG['SCREENSHOT_INTERVAL'])
+            with FRAME_MANAGER.lock:
+                if FRAME_MANAGER.latest_frame:
+                    frame_data, frame_ts = FRAME_MANAGER.latest_frame
+            
+            # If new frame is available, upload it
+            if frame_data and frame_ts > last_sent_ts:
+                last_sent_ts = frame_ts
+                
+                # Use persistent session
+                SESSION.post(f"{CONFIG['API_URL']}/agent/screen", json={
+                    'id': CONFIG['AGENT_ID'],
+                    'image': frame_data
+                }, timeout=5)
+                
+            else:
+                # No new frame yet, short sleep to prevent busy loop
+                time.sleep(0.01)
+                
+        except Exception as e:
+            logger.error(f"Upload Error: {e}")
+            time.sleep(1)
+
+def start_screen_streaming():
+    t_capture = threading.Thread(target=capture_loop, daemon=True)
+    t_upload = threading.Thread(target=upload_loop, daemon=True)
+    t_capture.start()
+    t_upload.start()
 
 def start_websocket_client():
     """Connect to Reverb/Pusher WebSocket with Polling Fallback"""
@@ -367,9 +418,8 @@ def main():
     if not register_agent():
         logger.warning("Agent registration failed, will retry...")
     
-    # Start screenshot thread
-    t_screen = threading.Thread(target=stream_screen, daemon=True)
-    t_screen.start()
+    # Start screen streaming threads (Capture + Upload)
+    start_screen_streaming()
     
     # Start heartbeat thread
     t_heartbeat = threading.Thread(target=send_heartbeat, daemon=True)
