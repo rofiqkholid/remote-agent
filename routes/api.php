@@ -19,4 +19,5 @@ Route::prefix('agent')->group(function () {
     Route::post('/heartbeat', [AgentController::class, 'heartbeat']);
 });
 
+Route::get('/agent/config', [AgentController::class, 'getConfig']);
 Route::post('/agent/command', [AgentController::class, 'sendCommand']);

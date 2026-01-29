@@ -173,4 +173,15 @@ class AgentController extends Controller
 
         return response()->json(['status' => 'sent']);
     }
+
+    public function getConfig()
+    {
+        // Expose public config for the agent
+        return response()->json([
+            'reverb_app_key' => config('reverb.apps.apps.0.key'),
+            'reverb_host' => config('reverb.apps.apps.0.options.host'),
+            'reverb_port' => config('reverb.apps.apps.0.options.port'),
+            'reverb_scheme' => config('reverb.apps.apps.0.options.scheme'),
+        ]);
+    }
 }

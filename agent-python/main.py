@@ -175,58 +175,131 @@ def stream_screen():
     
             time.sleep(CONFIG['SCREENSHOT_INTERVAL'])
 
-def poll_commands():
-    """Poll for commands from the server"""
-    import pyautogui
-    pyautogui.FAILSAFE = False # Disable fail-safe to prevent accidental quits
+def start_websocket_client():
+    """Connect to Reverb/Pusher WebSocket"""
+    import websocket
+    import simplejson as json
+    import threading
     
+    # 1. Fetch Config
+    try:
+        response = requests.get(f"{CONFIG['API_URL']}/agent/config", timeout=10)
+        if response.status_code != 200:
+            logger.error(f"Failed to fetch config: {response.status_code}")
+            return
+        
+        ws_config = response.json()
+        APP_KEY = ws_config.get('reverb_app_key')
+        HOST = ws_config.get('reverb_host')
+        PORT = ws_config.get('reverb_port')
+        SCHEME = ws_config.get('reverb_scheme')
+        
+        logger.info(f"Reverb Config: {HOST}:{PORT} (Key: {APP_KEY})")
+        
+        if not APP_KEY:
+            logger.error("Reverb App Key missing!")
+            return
+
+    except Exception as e:
+        logger.error(f"Error fetching WS config: {e}")
+        return
+
+    # 2. WebSocket Logic
+    ws_url = f"{'wss' if SCHEME == 'https' else 'ws'}://{HOST}:{PORT}/app/{APP_KEY}?protocol=7&client=python-agent&version=1.0.0"
+    
+    def on_message(ws, message):
+        try:
+            payload = json.loads(message)
+            event = payload.get('event')
+            data = payload.get('data')
+            
+            if isinstance(data, str):
+                try:
+                    data = json.loads(data)
+                except:
+                    pass
+
+            if event == 'pusher:connection_established':
+                # Subscribe to private channel
+                ws.send(json.dumps({
+                    'event': 'pusher:subscribe',
+                    'data': {
+                        'channel': f"agent.{CONFIG['AGENT_ID']}"
+                    }
+                }))
+                logger.info(f"Subscribed to agent.{CONFIG['AGENT_ID']}")
+                
+            elif event == 'App\\Events\\AgentCommandSent':
+                # Handle command
+                command = data.get('command')
+                if command:
+                    process_command(command)
+                    
+            elif event == 'pusher:ping':
+                 ws.send(json.dumps({'event': 'pusher:pong'}))
+
+        except Exception as e:
+            logger.error(f"WS Message Error: {e}")
+
+    def on_error(ws, error):
+        logger.error(f"WS Error: {error}")
+
+    def on_close(ws, close_status_code, close_msg):
+        logger.info("WS Closed. Reconnecting in 5s...")
+        time.sleep(5)
+        # Reconnect loop is handled by while True below? 
+        # Actually websocket.App run_forever blocks. We need a loop around it.
+
+    def on_open(ws):
+        logger.info("WS Connected")
+
+    # 3. Connection Loop
     while True:
         try:
-            # Fix: Add /agent prefix to match route group
-            response = requests.get(f"{CONFIG['API_URL']}/agent/{CONFIG['AGENT_ID']}/commands", timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                commands = data.get('commands', [])
-                
-                for cmd in commands:
-                    try:
-                        logger.info(f"Executing command: {cmd}")
-                        cmd_type = cmd.get('type')
-                        
-                        if cmd_type == 'move':
-                            # Normalize coordinates (0-1) to screen size
-                            x = float(cmd.get('x'))
-                            y = float(cmd.get('y'))
-                            screen_width, screen_height = pyautogui.size()
-                            target_x = int(x * screen_width)
-                            target_y = int(y * screen_height)
-                            pyautogui.moveTo(target_x, target_y)
-                            
-                        elif cmd_type == 'click':
-                            x = float(cmd.get('x'))
-                            y = float(cmd.get('y'))
-                            screen_width, screen_height = pyautogui.size()
-                            target_x = int(x * screen_width)
-                            target_y = int(y * screen_height)
-                            pyautogui.click(target_x, target_y)
-                            
-                        elif cmd_type == 'type':
-                            text = cmd.get('text')
-                            if text:
-                                # Handle special keys if needed, or just type
-                                if len(text) > 1 and text in pyautogui.KEY_NAMES:
-                                    pyautogui.press(text)
-                                else:
-                                    pyautogui.write(text)
-                                    
-                    except Exception as e:
-                        logger.error(f"Error executing command {cmd}: {e}")
-                        
+            ws = websocket.WebSocketApp(ws_url,
+                                      on_open=on_open,
+                                      on_message=on_message,
+                                      on_error=on_error,
+                                      on_close=on_close)
+            ws.run_forever()
         except Exception as e:
-            logger.error(f"Poll error: {e}")
+            logger.error(f"WS Connection Failed: {e}")
             time.sleep(5)
+
+def process_command(cmd):
+    """Execute command using pyautogui"""
+    import pyautogui
+    try:
+        logger.info(f"Executing command: {cmd}")
+        cmd_type = cmd.get('type')
+        
+        if cmd_type == 'move':
+            x = float(cmd.get('x'))
+            y = float(cmd.get('y'))
+            screen_width, screen_height = pyautogui.size()
+            target_x = int(x * screen_width)
+            target_y = int(y * screen_height)
+            pyautogui.moveTo(target_x, target_y)
             
-        time.sleep(0.1) # Short sleep to prevent CPU hogging if server returns immediately
+        elif cmd_type == 'click':
+            x = float(cmd.get('x'))
+            y = float(cmd.get('y'))
+            screen_width, screen_height = pyautogui.size()
+            target_x = int(x * screen_width)
+            target_y = int(y * screen_height)
+            pyautogui.click(target_x, target_y)
+            
+        elif cmd_type == 'type':
+            text = cmd.get('text')
+            if text:
+                if len(text) > 1 and text in pyautogui.KEY_NAMES:
+                    pyautogui.press(text)
+                else:
+                    pyautogui.write(text)
+                    
+    except Exception as e:
+        logger.error(f"Command Error: {e}")
+
 
 def create_icon_image():
     """Create a simple icon for system tray"""
