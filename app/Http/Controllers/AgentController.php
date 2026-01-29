@@ -56,8 +56,17 @@ class AgentController extends Controller
         // Update last seen
         Agent::where('uuid', $data['id'])->update(['last_seen_at' => now()]);
 
-        // Store image in Cache for 30 seconds
-        Cache::put('agent_screen_' . $data['id'], $data['image'], 30);
+        // Store image directly in storage for performance (bypass Cache overhead)
+        $path = storage_path('app/agent_frames/' . $data['id'] . '.jpg');
+        // Ensure directory exists
+        if (!file_exists(dirname($path))) {
+            mkdir(dirname($path), 0755, true);
+        }
+
+        // Decode and save raw bytes to avoid decoding on read
+        // The agent sends base64, we decode it here once.
+        $imageBytes = base64_decode($data['image']);
+        file_put_contents($path, $imageBytes);
 
         // Broadcast notification only (lightweight)
         broadcast(new AgentScreenUpdated($data['id'], 'AVAILABLE'));
@@ -67,17 +76,12 @@ class AgentController extends Controller
 
     public function getScreenImage($id)
     {
-        $image = \Cache::get('agent_screen_' . $id);
-        if (!$image) {
+        // Read from file storage
+        $path = storage_path('app/agent_frames/' . $id . '.jpg');
+        if (!file_exists($path)) {
             return response('No signal', 404);
         }
-        // Return raw image bytes if it was sent as raw, but here it's base64 string.
-        // If the frontend expects base64 in JSON, we can return that.
-        // Or better, serve it as an image response for img src directly.
-
-        // Decoding base64 to serve as real image
-        $imageBlob = base64_decode($image);
-        return response($imageBlob)->header('Content-Type', 'image/jpeg');
+        return response()->file($path, ['Content-Type' => 'image/jpeg']);
     }
 
     public function stream($id)
@@ -119,13 +123,14 @@ class AgentController extends Controller
                         break;
                     }
 
-                    $image = Cache::get('agent_screen_' . $id);
+                    $path = storage_path('app/agent_frames/' . $id . '.jpg');
+                    clearstatcache(true, $path); // Clear cache to get fresh modification time
 
-                    if ($image) {
-                        $hash = md5($image);
-                        if ($hash !== $lastHash) {
-                            $lastHash = $hash;
-                            $data = base64_decode($image);
+                    if (file_exists($path)) {
+                        $mtime = filemtime($path);
+                        if ($mtime !== $lastHash) { // Use mtime as hash
+                            $lastHash = $mtime;
+                            $data = file_get_contents($path);
 
                             echo "--frame\r\n";
                             echo "Content-Type: image/jpeg\r\n";
@@ -133,11 +138,15 @@ class AgentController extends Controller
                             echo $data;
                             echo "\r\n";
 
-                            flush(); // Force send to client
+                            // Aggressive flushing
+                            while (ob_get_level() > 0) {
+                                ob_end_flush();
+                            }
+                            flush();
                         }
                     }
 
-                    usleep(25000); // Check cache every 25ms (40x check rate) for low latency
+                    usleep(10000); // 10ms check (High Performance)
                 }
             } catch (\Exception $e) {
                 // Log error for debugging

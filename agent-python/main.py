@@ -149,6 +149,9 @@ def send_heartbeat():
             logger.error(f"Heartbeat error: {e}")
         time.sleep(30)  # Every 30 seconds
 
+# Global persistent session
+SESSION = requests.Session()
+
 def stream_screen():
     with mss.mss() as sct:
         monitor = sct.monitors[1] 
@@ -163,7 +166,8 @@ def stream_screen():
                 img.save(buffer, format="JPEG", quality=40)
                 img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
                 
-                requests.post(f"{CONFIG['API_URL']}/agent/screen", json={
+                # Use persistent session for uploads (Keep-Alive)
+                SESSION.post(f"{CONFIG['API_URL']}/agent/screen", json={
                     'id': CONFIG['AGENT_ID'],
                     'image': img_str
                 }, timeout=5)
@@ -172,7 +176,7 @@ def stream_screen():
                 logger.error(f"Stream Error: {e}")
                 time.sleep(5)
             
-    
+            # Maintain target FPS but allow max throughput
             time.sleep(CONFIG['SCREENSHOT_INTERVAL'])
 
 def start_websocket_client():
