@@ -17,16 +17,7 @@ Route::prefix('agent')->group(function () {
     Route::get('/{id}/image', [AgentController::class, 'getScreenImage']);
     Route::get('/{id}/stream', [AgentController::class, 'stream']); // MJPEG Stream
     Route::post('/heartbeat', [AgentController::class, 'heartbeat']);
-
+    Route::get('/{id}/commands', [AgentController::class, 'getCommands']); // Poll for commands
 });
 
-Route::post('/agent/command', function (Request $request) {
-    // This endpoint is for the DASHBOARD to send commands to the AGENT
-    $targetId = $request->input('agentId');
-    $command = $request->except('agentId');
-
-    broadcast(new \App\Events\AgentCommandSent($targetId, $command));
-
-    // For now, let's assume we implement AgentCommandSent next or use a generic event
-    return response()->json(['status' => 'sent']);
-});
+Route::post('/agent/command', [AgentController::class, 'sendCommand']);

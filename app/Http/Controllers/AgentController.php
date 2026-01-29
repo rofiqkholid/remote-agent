@@ -160,4 +160,37 @@ class AgentController extends Controller
         }
         return response()->json(['status' => 'ok']);
     }
+
+    public function sendCommand(Request $request)
+    {
+        $data = $request->validate([
+            'agentId' => 'required|string',
+            'command' => 'required|array'
+        ]);
+
+        $key = 'agent_commands_' . $data['agentId'];
+        $commands = Cache::get($key, []);
+        $commands[] = $data['command'];
+        Cache::put($key, $commands, 5); // Keep for 5 seconds
+
+        return response()->json(['status' => 'queued']);
+    }
+
+    public function getCommands($id)
+    {
+        // Long polling for commands (up to 5 seconds)
+        $startTime = time();
+        $key = 'agent_commands_' . $id;
+
+        while (time() - $startTime < 5) {
+            $commands = Cache::get($key);
+            if (!empty($commands)) {
+                Cache::forget($key); // Consume commands
+                return response()->json(['commands' => $commands]);
+            }
+            usleep(100000); // 100ms
+        }
+
+        return response()->json(['commands' => []]);
+    }
 }

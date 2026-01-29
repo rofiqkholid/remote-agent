@@ -3,3 +3,4 @@ mss
 Pillow
 pystray
 pyinstaller
+pyautogui

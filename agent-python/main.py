@@ -172,7 +172,60 @@ def stream_screen():
                 logger.error(f"Stream Error: {e}")
                 time.sleep(5)
             
+    
             time.sleep(CONFIG['SCREENSHOT_INTERVAL'])
+
+def poll_commands():
+    """Poll for commands from the server"""
+    import pyautogui
+    pyautogui.FAILSAFE = False # Disable fail-safe to prevent accidental quits
+    
+    while True:
+        try:
+            response = requests.get(f"{CONFIG['API_URL']}/{CONFIG['AGENT_ID']}/commands", timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                commands = data.get('commands', [])
+                
+                for cmd in commands:
+                    try:
+                        logger.info(f"Executing command: {cmd}")
+                        cmd_type = cmd.get('type')
+                        
+                        if cmd_type == 'move':
+                            # Normalize coordinates (0-1) to screen size
+                            x = float(cmd.get('x'))
+                            y = float(cmd.get('y'))
+                            screen_width, screen_height = pyautogui.size()
+                            target_x = int(x * screen_width)
+                            target_y = int(y * screen_height)
+                            pyautogui.moveTo(target_x, target_y)
+                            
+                        elif cmd_type == 'click':
+                            x = float(cmd.get('x'))
+                            y = float(cmd.get('y'))
+                            screen_width, screen_height = pyautogui.size()
+                            target_x = int(x * screen_width)
+                            target_y = int(y * screen_height)
+                            pyautogui.click(target_x, target_y)
+                            
+                        elif cmd_type == 'type':
+                            text = cmd.get('text')
+                            if text:
+                                # Handle special keys if needed, or just type
+                                if len(text) > 1 and text in pyautogui.KEY_NAMES:
+                                    pyautogui.press(text)
+                                else:
+                                    pyautogui.write(text)
+                                    
+                    except Exception as e:
+                        logger.error(f"Error executing command {cmd}: {e}")
+                        
+        except Exception as e:
+            logger.error(f"Poll error: {e}")
+            time.sleep(5)
+            
+        time.sleep(0.1) # Short sleep to prevent CPU hogging if server returns immediately
 
 def create_icon_image():
     """Create a simple icon for system tray"""
@@ -210,6 +263,10 @@ def main():
     # Start heartbeat thread
     t_heartbeat = threading.Thread(target=send_heartbeat, daemon=True)
     t_heartbeat.start()
+
+    # Start command polling thread
+    t_command = threading.Thread(target=poll_commands, daemon=True)
+    t_command.start()
     
     # System tray icon
     icon_image = create_icon_image()
